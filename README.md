@@ -31,6 +31,28 @@ Every submission lands on exactly one rung.
 `installed_no_build` is reported separately: nothing failed, but nothing was
 checked either, and pretending otherwise would flatter the number.
 
+## Sponsor-tech verification
+
+Every sponsored hackathon asks whether the team used the sponsor's technology or
+just its logo. `src/checks/` answers that per ecosystem. The Midnight check
+(`checks/midnight.ts`) places each repo on a second ladder:
+
+| ladder | meaning |
+| --- | --- |
+| `no_contract` | no Compact contract in the repo |
+| `template_contract` | the contract is a starter-kit example with the names changed (token similarity ≥ 0.85) |
+| `ledger_only` | a real contract with no private inputs; nothing in it needed zero knowledge |
+| `private_state` | declares witnesses and/or discloses selectively |
+
+It also counts witnesses, `disclose` calls, ledgers and circuits, records which
+`@midnight-ntwrk/*` packages are declared and imported, and compiles every
+contract twice: with the newest compiler that existed on the repo's last commit
+date, and with today's. A contract that passes the first and fails the second
+was broken by toolchain drift, not by its authors. The summary reports both.
+
+Whether a `private_state` contract uses privacy *meaningfully* is still a
+judge's call. The ladder tells you where to look, not what to conclude.
+
 ## Running it
 
 Input is a CSV with a header and at least a `repo` column. `cohort` and `stage`

@@ -117,6 +117,8 @@ export interface RepoResult {
   verdict: Verdict;
   failedStage?: Stage;
   inventory?: Inventory;
+  /** Sponsor-tech verification result, when an ecosystem check applies. Shape owned by src/checks/. */
+  contract?: import('./checks/midnight.js').ContractCheck;
   stages: StageResult[];
   /** Where a human can go look at the failure: checkpoint id, local path, etc. */
   checkpointRef?: string | null;
@@ -138,4 +140,8 @@ export interface RunSummary {
   buildRateAll: number;
   medianWallMs: number;
   totalSandboxSeconds: number;
+  /** Sponsor-tech ladder counts, when checks ran. */
+  contractLadder?: Record<string, number>;
+  /** Contracts that compiled with the as-of-submission compiler vs today's. */
+  contractCompile?: { checked: number; pinnedOk: number; latestOk: number; pinnedOkLatestFail: number; toolchainUnavailable: number };
 }

@@ -47,6 +47,19 @@ export class Reporter {
     const built = BUILT.reduce((n, v) => n + byVerdict[v], 0);
     const evaluable = EVALUABLE.reduce((n, v) => n + byVerdict[v], 0);
     const walls = this.results.map((r) => r.totalMs).sort((a, b) => a - b);
+    const contractLadder: Record<string, number> = {};
+    const contractCompile = { checked: 0, pinnedOk: 0, latestOk: 0, pinnedOkLatestFail: 0, toolchainUnavailable: 0 };
+    for (const r of this.results) {
+      const c = r.contract;
+      if (!c) continue;
+      contractLadder[c.ladder] = (contractLadder[c.ladder] ?? 0) + 1;
+      if (c.files.length === 0) continue;
+      if (c.compilesPinned === null && c.compilesLatest === null) { contractCompile.toolchainUnavailable++; continue; }
+      contractCompile.checked++;
+      if (c.compilesPinned) contractCompile.pinnedOk++;
+      if (c.compilesLatest) contractCompile.latestOk++;
+      if (c.compilesPinned && c.compilesLatest === false) contractCompile.pinnedOkLatestFail++;
+    }
     return {
       runId: this.runId,
       executor,
@@ -60,6 +73,8 @@ export class Reporter {
       buildRateAll: total ? built / total : 0,
       medianWallMs: walls.length ? walls[Math.floor(walls.length / 2)] : 0,
       totalSandboxSeconds: Math.round(sandboxMs / 1000),
+      contractLadder,
+      contractCompile,
     };
   }
 
@@ -71,7 +86,8 @@ export class Reporter {
 
   /** A CSV a judge can open. One row per submission. Private. */
   async writeCsv(): Promise<string> {
-    const cols = ['repo', 'cohort', 'stage', 'verdict', 'failedStage', 'buildSystem', 'projectDir', 'sourceFiles', 'commits', 'lastCommit', 'hasReadme', 'readmeBytes', 'hasTests', 'hasCi', 'hasDockerfile', 'hasLockfile', 'compact', 'solidity', 'totalSec', 'checkpointRef'];
+    const cols = ['repo', 'cohort', 'stage', 'verdict', 'failedStage', 'buildSystem', 'projectDir', 'sourceFiles', 'commits', 'lastCommit', 'hasReadme', 'readmeBytes', 'hasTests', 'hasCi', 'hasDockerfile', 'hasLockfile', 'compact', 'solidity', 'totalSec', 'checkpointRef',
+      'ladder', 'witnesses', 'discloses', 'ledgers', 'circuits', 'templateMatch', 'templateSim', 'mnjsDeps', 'mnjsImportFiles', 'pinnedCompiler', 'compilesPinned', 'latestCompiler', 'compilesLatest'];
     const esc = (v: unknown) => {
       const s = v === undefined || v === null ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -84,6 +100,9 @@ export class Reporter {
       r.inventory?.hasCi ?? '', r.inventory?.hasDockerfile ?? '', r.inventory?.hasLockfile ?? '',
       r.inventory?.hasCompactContracts ?? '', r.inventory?.hasSolidity ?? '',
       Math.round(r.totalMs / 1000), r.checkpointRef ?? '',
+      r.contract?.ladder ?? '', r.contract?.witnesses ?? '', r.contract?.discloses ?? '', r.contract?.ledgers ?? '', r.contract?.circuits ?? '',
+      r.contract?.templateMatch?.name ?? '', r.contract?.templateMatch?.similarity ?? '', r.contract?.midnightJsDeps.length ?? '', r.contract?.midnightJsImportFiles ?? '',
+      r.contract?.pinnedCompiler ?? '', r.contract?.compilesPinned ?? '', r.contract?.latestCompiler ?? '', r.contract?.compilesLatest ?? '',
     ].map(esc).join(','));
     const path = join(this.outDir, `${this.runId}.csv`);
     await writeFile(path, [cols.join(','), ...rows].join('\n') + '\n');
@@ -101,6 +120,13 @@ export function printSummary(s: RunSummary): string {
   }
   lines.push(`  built (of evaluable) ${pct(s.buildRateEvaluable)}   built (of all) ${pct(s.buildRateAll)}`);
   lines.push(`  median wall ${Math.round(s.medianWallMs / 1000)}s, total sandbox time ${s.totalSandboxSeconds}s`);
+  if (s.contractLadder && Object.keys(s.contractLadder).length) {
+    lines.push('  sponsor tech: ' + Object.entries(s.contractLadder).map(([k, v]) => `${k}=${v}`).join(', '));
+  }
+  if (s.contractCompile && s.contractCompile.checked) {
+    const c = s.contractCompile;
+    lines.push(`  contracts compiled: ${c.pinnedOk}/${c.checked} with the compiler of their day, ${c.latestOk}/${c.checked} with today's; ${c.pinnedOkLatestFail} broke by drift${c.toolchainUnavailable ? `; ${c.toolchainUnavailable} unchecked (toolchain)` : ''}`);
+  }
   for (const [cohort, bv] of Object.entries(s.byCohort)) {
     const t = Object.values(bv).reduce((a, b) => a + b, 0);
     const built = BUILT.reduce((n, v) => n + bv[v], 0);

@@ -8,6 +8,8 @@
  */
 import type { Sandbox, Executor, RepoResult, StageResult, Stage, Verdict, Inventory, ExecResult } from './types.js';
 import { takeInventory } from './inventory.js';
+import { checkMidnight } from './checks/midnight.js';
+import type { ContractCheck } from './checks/midnight.js';
 
 export interface PipelineOptions {
   cloneTimeoutMs: number;
@@ -146,6 +148,7 @@ export async function judgeOne(
   let verdict: Verdict = 'unreachable';
   let failedStage: Stage | undefined;
   let inventory: Inventory | undefined;
+  let contract: ContractCheck | undefined;
   let checkpointRef: string | null | undefined;
   let error: string | undefined;
 
@@ -181,6 +184,17 @@ export async function judgeOne(
       failedStage = 'inventory';
       return finish();
     }
+
+    // 2b. sponsor-tech verification. Runs before install so it is independent of whether
+    // the app around the contract builds. Only Midnight for now; see src/checks/.
+    if (inventory.hasCompactContracts || inventory.byExtension['ts'] || inventory.byExtension['js']) {
+      try {
+        contract = await checkMidnight(sb, inventory);
+      } catch (err) {
+        error = `contract check: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
     if (inventory.buildSystem === 'none') {
       verdict = 'not_evaluable';
       failedStage = 'inventory';
@@ -290,6 +304,7 @@ export async function judgeOne(
       verdict,
       failedStage,
       inventory,
+      contract,
       stages,
       checkpointRef,
       error,
