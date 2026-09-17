@@ -46,11 +46,19 @@ function stageOf(stage: Stage, r: ExecResult, command?: string): StageResult {
 export const COMPACT_TOOLCHAIN = `export PATH="$HOME/.local/bin:$HOME/.compact/bin:$PATH"; command -v compact >/dev/null || curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh; compact compile --version >/dev/null 2>&1 || compact update`;
 const TOOLCHAIN_PATH = `export PATH="$HOME/.local/bin:$HOME/.compact/bin:$PATH" &&`;
 
+// The Sprite image ships Node and npm only. Rather than hoping a global install lands on
+// PATH, resolve each package manager to the real binary if present, else run it via npx.
+const PM = {
+  pnpm: `$(command -v pnpm || echo "npx -y pnpm")`,
+  yarn: `$(command -v yarn || echo "npx -y yarn")`,
+  bun: `$(command -v bun || echo "npx -y bun")`,
+};
+
 function jsRun(inv: Inventory): string {
   switch (inv.buildSystem) {
-    case 'yarn': return 'yarn';
-    case 'pnpm': return 'pnpm run';
-    case 'bun': return 'bun run';
+    case 'yarn': return `${PM.yarn}`;
+    case 'pnpm': return `${PM.pnpm} run`;
+    case 'bun': return `${PM.bun} run`;
     default: return 'npm run';
   }
 }
@@ -82,21 +90,21 @@ function baseCommandsFor(inv: Inventory, cd: string): { install: string | null; 
       };
     case 'yarn':
       return {
-        install: `${cd} (corepack enable >/dev/null 2>&1 || true) && yarn install --non-interactive 2>&1`,
-        build: inv.hasBuildScript ? `${cd} yarn build` : null,
-        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} yarn test` : null,
+        install: `${cd} ${PM.yarn} install --non-interactive 2>&1`,
+        build: inv.hasBuildScript ? `${cd} ${PM.yarn} build` : null,
+        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} ${PM.yarn} test` : null,
       };
     case 'pnpm':
       return {
-        install: `${cd} (corepack enable >/dev/null 2>&1 || npm i -g pnpm >/dev/null 2>&1 || true) && pnpm install --frozen-lockfile || pnpm install`,
-        build: inv.hasBuildScript ? `${cd} pnpm run build` : null,
-        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} pnpm test` : null,
+        install: `${cd} ${PM.pnpm} install --frozen-lockfile || ${PM.pnpm} install`,
+        build: inv.hasBuildScript ? `${cd} ${PM.pnpm} run build` : null,
+        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} ${PM.pnpm} test` : null,
       };
     case 'bun':
       return {
-        install: `${cd} (command -v bun >/dev/null || npm i -g bun >/dev/null 2>&1) && bun install`,
-        build: inv.hasBuildScript ? `${cd} bun run build` : null,
-        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} bun test` : null,
+        install: `${cd} ${PM.bun} install`,
+        build: inv.hasBuildScript ? `${cd} ${PM.bun} run build` : null,
+        test: inv.hasTestScript && !inv.testScriptIsPlaceholder ? `${cd} ${PM.bun} test` : null,
       };
     case 'cargo':
       return { install: null, build: `${cd} cargo build --locked 2>&1 || cargo build 2>&1`, test: `${cd} cargo test 2>&1` };
@@ -186,6 +194,13 @@ export async function judgeOne(
       const r = await sb.exec(cmds.install, { timeoutMs: opts.installTimeoutMs, env });
       stages.push(stageOf('install', r, cmds.install));
       if (r.exitCode !== 0) {
+        const missingTool = /(pnpm|yarn|bun|npx|npm|cargo|go|python3|pip|forge|uv|poetry): (command )?not found/i.exec(r.stdout + r.stderr);
+        if (missingTool) {
+          verdict = 'not_evaluable';
+          failedStage = 'install';
+          error = `toolchain ${missingTool[1]} unavailable in sandbox`;
+          return finish();
+        }
         verdict = 'install_failed';
         failedStage = 'install';
         return finish(true);
