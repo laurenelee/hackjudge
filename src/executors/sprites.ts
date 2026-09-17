@@ -10,7 +10,7 @@
  * hacker) can open the exact broken state. On pass we delete it: there is nothing
  * to look at.
  */
-import { SpritesClient } from '@fly/sprites';
+import { SpritesClient, ExecError } from '@fly/sprites';
 import type { Sprite } from '@fly/sprites';
 import type { Executor, Sandbox, ExecOpts, ExecResult } from '../types.js';
 
@@ -26,12 +26,6 @@ export interface SpritesExecutorOptions {
   labels?: string[];
 }
 
-/** Hand the command to a login shell without any quoting hazards: base64 in, bash -lc out. */
-function loginShell(command: string): string {
-  const b64 = Buffer.from(command, 'utf8').toString('base64');
-  return `bash -lc "$(echo ${b64} | base64 -d)"`;
-}
-
 class SpriteSandbox implements Sandbox {
   readonly workdir = '/home/sprite/repo';
   constructor(readonly id: string, private readonly sprite: Sprite) {}
@@ -39,11 +33,14 @@ class SpriteSandbox implements Sandbox {
   async exec(command: string, opts: ExecOpts = {}): Promise<ExecResult> {
     const started = Date.now();
     const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
-    // The SDK surfaces timeouts as a rejected promise; normalise to ExecResult.
+    // Two things the SDK does that its Node-style surface does not advertise:
+    //  1. sprite.exec(cmd) splits on whitespace and runs argv[0] directly. There is no shell,
+    //     so `&&`, quotes, pipes and $VARS mean nothing. We use execFile with an explicit
+    //     login shell instead (login so the image's lazy toolchain loaders are sourced).
+    //  2. Any non-zero exit is thrown as ExecError rather than returned. We want the exit
+    //     code and the output either way, so we catch it and unwrap.
     try {
-      // Login shell so the base image's lazy toolchain loaders (cargo, python3, go) are available.
-      const wrapped = loginShell(command);
-      const r = await this.sprite.exec(wrapped, {
+      const r = await this.sprite.execFile('bash', ['-lc', command], {
         cwd: opts.cwd ?? undefined,
         env: { CI: 'true', FORCE_COLOR: '0', NO_COLOR: '1', npm_config_fund: 'false', npm_config_audit: 'false', ...opts.env },
         timeout: timeoutMs,
@@ -57,6 +54,15 @@ class SpriteSandbox implements Sandbox {
         timedOut: false,
       };
     } catch (err: unknown) {
+      if (err instanceof ExecError) {
+        return {
+          stdout: String(err.stdout ?? ''),
+          stderr: String(err.stderr ?? ''),
+          exitCode: err.exitCode,
+          durationMs: Date.now() - started,
+          timedOut: false,
+        };
+      }
       const msg = err instanceof Error ? err.message : String(err);
       const timedOut = /timeout|timed out|abort/i.test(msg);
       return { stdout: '', stderr: msg, exitCode: -1, durationMs: Date.now() - started, timedOut };

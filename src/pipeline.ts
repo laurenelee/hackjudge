@@ -153,7 +153,12 @@ export async function judgeOne(
     );
     stages.push(stageOf('clone', clone, 'git clone'));
     if (clone.exitCode !== 0) {
-      verdict = 'unreachable';
+      // Only GitHub saying no counts against the submission. Anything else (no git, no
+      // network, a broken harness command) is our environment and is reported as such.
+      const out = clone.stdout + clone.stderr;
+      const githubSaidNo = /Repository not found|could not read Username|Authentication failed|remote: Not Found|is disabled|access denied|Please make sure you have the correct access rights/i.test(out);
+      verdict = githubSaidNo ? 'unreachable' : 'not_evaluable';
+      if (!githubSaidNo) error = 'clone failed for a reason other than GitHub refusing (environment?)';
       failedStage = 'clone';
       return finish();
     }
