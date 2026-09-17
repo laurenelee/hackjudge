@@ -1,0 +1,23 @@
+{
+  "name": "hackjudge",
+  "version": "0.1.0",
+  "description": "Run every hackathon submission, one sandbox each. Judges read READMEs; this runs the code.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "judge": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@fly/sprites": "^0.2.2"
+  }
+}
