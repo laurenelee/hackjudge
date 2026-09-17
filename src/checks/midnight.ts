@@ -11,9 +11,9 @@
  *   ledger_only        a real contract, but no private inputs: nothing here needed ZK
  *   private_state      declares witnesses (private inputs) and/or discloses selectively
  *
- * And it compiles each contract twice: with the newest compiler that existed on the
- * repo's last commit date (what the team would have used), and with today's. The gap
- * between those two answers is toolchain drift, measured rather than asserted.
+ * And it compiles each contract twice: with the compiler its pragma asks for (falling
+ * back to the newest that existed on the repo's last commit date), and with today's.
+ * The gap between those two answers is toolchain drift, measured rather than asserted.
  *
  * Other ecosystems get their own file in this directory. The pipeline only knows the
  * shape of the result.
@@ -41,8 +41,12 @@ export interface ContractCheck {
   midnightJsDeps: string[];
   /** Source files importing @midnight-ntwrk/* */
   midnightJsImportFiles: number;
-  /** Compiler chosen from the repo's last commit date. */
+  /** Compiler the contract asked for (from its pragma), else the newest as of the last commit. */
   pinnedCompiler: string | null;
+  pinnedBy: 'pragma' | 'date' | null;
+  /** Per-file outcome with the pinned compiler: files that compiled / files tried. */
+  filesCompiledPinned: string;
+  filesCompiledLatest: string;
   latestCompiler: string | null;
   /** null = could not run the compiler at all (our problem, not theirs). */
   compilesPinned: boolean | null;
@@ -71,6 +75,24 @@ const COMPILER_RELEASES: Array<{ version: string; date: string }> = [
   { version: '0.31.1', date: '2026-06-12' },
   { version: '0.34.0', date: '2026-08-16' },
 ];
+
+/**
+ * The contract's `pragma language_version` names the language it was written for, and the
+ * changelog pairs every toolchain with a language version at a fixed offset: language 0.26
+ * is toolchain 0.34, 0.23 is 0.31, 0.18 is 0.26. Minor plus eight, as far back as 0.16/0.24.
+ * When a pragma pins or upper-bounds a version, that is the compiler the team used.
+ */
+export function compilerForPragma(pragma: string | null): string | null {
+  if (!pragma) return null;
+  const versions = [...pragma.matchAll(/(\d+)\.(\d+)(?:\.(\d+))?/g)].map((m) => ({ major: +m[1], minor: +m[2] }));
+  if (!versions.length) return null;
+  // A pure lower bound (">= x") is satisfied by the latest compiler; only pins and upper bounds select one.
+  const hasUpperOrExact = /<|==|^\s*\d/.test(pragma.trim()) || !/>=|>/.test(pragma);
+  if (!hasUpperOrExact) return null;
+  const lang = versions.reduce((a, b) => (b.minor > a.minor ? b : a));
+  if (lang.major !== 0 || lang.minor < 14) return null;
+  return `0.${lang.minor + 8}`;
+}
 
 export function compilerAsOf(isoDate: string | null): string | null {
   if (!isoDate) return null;
@@ -142,6 +164,9 @@ export async function checkMidnight(sb: Sandbox, inv: Inventory): Promise<Contra
     midnightJsDeps: [],
     midnightJsImportFiles: 0,
     pinnedCompiler: null,
+    pinnedBy: null,
+    filesCompiledPinned: '',
+    filesCompiledLatest: '',
     latestCompiler: null,
     compilesPinned: null,
     compilesLatest: null,
@@ -192,31 +217,57 @@ export async function checkMidnight(sb: Sandbox, inv: Inventory): Promise<Contra
   else if (result.witnesses > 0) result.ladder = 'private_state';
   else result.ladder = 'ledger_only';
 
-  // Compile twice: as-of-submission, then latest. `compact update <v>` sets the default.
+  // Compile twice: with the compiler the contract asked for, then with today's.
+  // Each file is compiled on its own so one stray module cannot sink the repo; the
+  // repo "compiles" when every file does, and the per-file count is reported either way.
   const cli = await sb.exec(COMPACT_INSTALL_CLI, { timeoutMs: 3 * 60_000 });
   if (cli.exitCode === 0) {
-    result.pinnedCompiler = compilerAsOf(inv.lastCommitIso);
-    const compileAll = result.files
-      .map((f, i) => `compact compile "${sb.workdir}/${f}" "/tmp/hj-compact-out/${i}" >/tmp/hj-compact-log-${i} 2>&1 || { cat /tmp/hj-compact-log-${i}; exit 1; }`)
-      .join(' && ');
+    const mainPragma = (main.match(/pragma\s+language_version\s+([^;]+);/) ?? [null, null])[1];
+    const byPragma = compilerForPragma(mainPragma);
+    result.pinnedCompiler = byPragma ?? compilerAsOf(inv.lastCommitIso);
+    result.pinnedBy = byPragma ? 'pragma' : result.pinnedCompiler ? 'date' : null;
+
+    const compileEach = result.files
+      .map((f, i) => `if compact compile "${sb.workdir}/${f}" "/tmp/hj-compact-out/${i}" >/tmp/hj-compact-log-${i} 2>&1; then echo "HJ_OK ${i}"; else echo "HJ_FAIL ${i}"; tail -n 3 /tmp/hj-compact-log-${i}; fi`)
+      .join('; ');
+    const parse = (out: string) => {
+      const ok = (out.match(/^HJ_OK \d+$/gm) ?? []).length;
+      const fail = (out.match(/^HJ_FAIL \d+$/gm) ?? []).length;
+      const tail = out.split('\n').filter((l) => l && !/^HJ_(OK|FAIL)/.test(l)).slice(-12).join('\n').slice(-2000);
+      return { ok, fail, tail, tried: ok + fail };
+    };
 
     if (result.pinnedCompiler) {
       const pinned = await sb.exec(
-        `${COMPACT_PATH}; compact update ${result.pinnedCompiler} >/dev/null 2>&1 && rm -rf /tmp/hj-compact-out && ${compileAll}`,
-        { timeoutMs: 5 * 60_000 },
+        `${COMPACT_PATH}; compact update ${result.pinnedCompiler} >/tmp/hj-update 2>&1 || { echo HJ_TOOLCHAIN_FAIL; cat /tmp/hj-update; exit 3; }; rm -rf /tmp/hj-compact-out; ${compileEach}`,
+        { timeoutMs: 8 * 60_000 },
       );
-      // exit 0 = compiled; exit 1 with log = did not compile; anything else = toolchain trouble
-      result.compilesPinned = pinned.exitCode === 0 ? true : pinned.exitCode === 1 ? false : null;
-      if (pinned.exitCode !== 0) result.compileTailPinned = (pinned.stdout + pinned.stderr).split('\n').filter(Boolean).slice(-15).join('\n').slice(-2000);
+      if (pinned.exitCode === 3 || /HJ_TOOLCHAIN_FAIL/.test(pinned.stdout)) {
+        result.compilesPinned = null;
+        result.compileTailPinned = 'toolchain ' + result.pinnedCompiler + ' unavailable: ' + pinned.stdout.split('\n').slice(-3).join(' ').slice(-300);
+      } else {
+        const r = parse(pinned.stdout + pinned.stderr);
+        result.filesCompiledPinned = `${r.ok}/${r.tried}`;
+        result.compilesPinned = r.tried > 0 ? r.fail === 0 : null;
+        if (r.fail) result.compileTailPinned = r.tail;
+      }
     }
 
     const latest = await sb.exec(
-      `${COMPACT_PATH}; compact update >/dev/null 2>&1 && compact compile --version 2>/dev/null | head -1; rm -rf /tmp/hj-compact-out && ${compileAll}`,
-      { timeoutMs: 5 * 60_000 },
+      `${COMPACT_PATH}; compact update >/dev/null 2>&1; compact compile --version 2>/dev/null | head -1; rm -rf /tmp/hj-compact-out; ${compileEach}`,
+      { timeoutMs: 8 * 60_000 },
     );
     result.latestCompiler = (latest.stdout.match(/\d+\.\d+\.\d+/) ?? [null])[0];
-    result.compilesLatest = latest.exitCode === 0 ? true : latest.exitCode === 1 ? false : null;
-    if (latest.exitCode !== 0) result.compileTailLatest = (latest.stdout + latest.stderr).split('\n').filter(Boolean).slice(-15).join('\n').slice(-2000);
+    const r = parse(latest.stdout + latest.stderr);
+    result.filesCompiledLatest = `${r.ok}/${r.tried}`;
+    result.compilesLatest = r.tried > 0 ? r.fail === 0 : null;
+    if (r.fail) result.compileTailLatest = r.tail;
+
+    // Leave the compiler the contract asked for as the default, so the repo's own
+    // compile script (run later in the pipeline) builds the way the team built it.
+    if (result.pinnedBy === 'pragma' && result.compilesPinned !== null) {
+      await sb.exec(`${COMPACT_PATH}; compact update ${result.pinnedCompiler} >/dev/null 2>&1 || true`, { timeoutMs: 3 * 60_000 });
+    }
   }
 
   result.durationMs = Date.now() - t0;

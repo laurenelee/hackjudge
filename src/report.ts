@@ -87,7 +87,7 @@ export class Reporter {
   /** A CSV a judge can open. One row per submission. Private. */
   async writeCsv(): Promise<string> {
     const cols = ['repo', 'cohort', 'stage', 'verdict', 'failedStage', 'buildSystem', 'projectDir', 'sourceFiles', 'commits', 'lastCommit', 'hasReadme', 'readmeBytes', 'hasTests', 'hasCi', 'hasDockerfile', 'hasLockfile', 'compact', 'solidity', 'totalSec', 'checkpointRef',
-      'ladder', 'witnesses', 'discloses', 'ledgers', 'circuits', 'templateMatch', 'templateSim', 'mnjsDeps', 'mnjsImportFiles', 'pinnedCompiler', 'compilesPinned', 'latestCompiler', 'compilesLatest'];
+      'ladder', 'witnesses', 'discloses', 'ledgers', 'circuits', 'templateMatch', 'templateSim', 'mnjsDeps', 'mnjsImportFiles', 'pinnedCompiler', 'pinnedBy', 'filesPinned', 'compilesPinned', 'latestCompiler', 'filesLatest', 'compilesLatest'];
     const esc = (v: unknown) => {
       const s = v === undefined || v === null ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -102,7 +102,7 @@ export class Reporter {
       Math.round(r.totalMs / 1000), r.checkpointRef ?? '',
       r.contract?.ladder ?? '', r.contract?.witnesses ?? '', r.contract?.discloses ?? '', r.contract?.ledgers ?? '', r.contract?.circuits ?? '',
       r.contract?.templateMatch?.name ?? '', r.contract?.templateMatch?.similarity ?? '', r.contract?.midnightJsDeps.length ?? '', r.contract?.midnightJsImportFiles ?? '',
-      r.contract?.pinnedCompiler ?? '', r.contract?.compilesPinned ?? '', r.contract?.latestCompiler ?? '', r.contract?.compilesLatest ?? '',
+      r.contract?.pinnedCompiler ?? '', r.contract?.pinnedBy ?? '', r.contract?.filesCompiledPinned ?? '', r.contract?.compilesPinned ?? '', r.contract?.latestCompiler ?? '', r.contract?.filesCompiledLatest ?? '', r.contract?.compilesLatest ?? '',
     ].map(esc).join(','));
     const path = join(this.outDir, `${this.runId}.csv`);
     await writeFile(path, [cols.join(','), ...rows].join('\n') + '\n');
@@ -125,7 +125,7 @@ export function printSummary(s: RunSummary): string {
   }
   if (s.contractCompile && s.contractCompile.checked) {
     const c = s.contractCompile;
-    lines.push(`  contracts compiled: ${c.pinnedOk}/${c.checked} with the compiler of their day, ${c.latestOk}/${c.checked} with today's; ${c.pinnedOkLatestFail} broke by drift${c.toolchainUnavailable ? `; ${c.toolchainUnavailable} unchecked (toolchain)` : ''}`);
+    lines.push(`  contracts compiled: ${c.pinnedOk}/${c.checked} with the compiler they asked for, ${c.latestOk}/${c.checked} with today's; ${c.pinnedOkLatestFail} broke by drift${c.toolchainUnavailable ? `; ${c.toolchainUnavailable} unchecked (toolchain)` : ''}`);
   }
   for (const [cohort, bv] of Object.entries(s.byCohort)) {
     const t = Object.values(bv).reduce((a, b) => a + b, 0);

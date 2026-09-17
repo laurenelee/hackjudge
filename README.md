@@ -46,8 +46,9 @@ just its logo. `src/checks/` answers that per ecosystem. The Midnight check
 
 It also counts witnesses, `disclose` calls, ledgers and circuits, records which
 `@midnight-ntwrk/*` packages are declared and imported, and compiles every
-contract twice: with the newest compiler that existed on the repo's last commit
-date, and with today's. A contract that passes the first and fails the second
+contract twice: with the compiler its `pragma language_version` asks for (or, if
+the pragma is only a lower bound, the newest compiler as of the last commit), and
+with today's. A contract that passes the first and fails the second
 was broken by toolchain drift, not by its authors. The summary reports both.
 
 Whether a `private_state` contract uses privacy *meaningfully* is still a
