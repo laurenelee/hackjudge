@@ -26,6 +26,12 @@ export interface SpritesExecutorOptions {
   labels?: string[];
 }
 
+/** Hand the command to a login shell without any quoting hazards: base64 in, bash -lc out. */
+function loginShell(command: string): string {
+  const b64 = Buffer.from(command, 'utf8').toString('base64');
+  return `bash -lc "$(echo ${b64} | base64 -d)"`;
+}
+
 class SpriteSandbox implements Sandbox {
   readonly workdir = '/home/sprite/repo';
   constructor(readonly id: string, private readonly sprite: Sprite) {}
@@ -35,7 +41,9 @@ class SpriteSandbox implements Sandbox {
     const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
     // The SDK surfaces timeouts as a rejected promise; normalise to ExecResult.
     try {
-      const r = await this.sprite.exec(command, {
+      // Login shell so the base image's lazy toolchain loaders (cargo, python3, go) are available.
+      const wrapped = loginShell(command);
+      const r = await this.sprite.exec(wrapped, {
         cwd: opts.cwd ?? undefined,
         env: { CI: 'true', FORCE_COLOR: '0', NO_COLOR: '1', npm_config_fund: 'false', npm_config_audit: 'false', ...opts.env },
         timeout: timeoutMs,
