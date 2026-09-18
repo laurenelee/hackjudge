@@ -7,6 +7,7 @@
  * so "didn't work" is never the answer; "dependencies would not install" is.
  */
 import type { Sandbox, Executor, RepoResult, StageResult, Stage, Verdict, Inventory, ExecResult } from './types.js';
+import { createHash } from 'node:crypto';
 import { takeInventory } from './inventory.js';
 import { checkMidnight } from './checks/midnight.js';
 import type { ContractCheck } from './checks/midnight.js';
@@ -142,8 +143,9 @@ export async function judgeOne(
 ): Promise<RepoResult> {
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
-  const slug = repo.replace(/^https?:\/\/github\.com\//, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().slice(0, 40);
-  const sandboxId = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  // Machines get anonymous names. The repo they belong to lives in the results file, not in
+  // the dashboard, so a screenshot or a screen share never lists the teams.
+  const sandboxId = `${createHash('sha256').update(repo).digest('hex').slice(0, 10)}-${Math.random().toString(36).slice(2, 5)}`;
   const stages: StageResult[] = [];
   let verdict: Verdict = 'unreachable';
   let failedStage: Stage | undefined;
