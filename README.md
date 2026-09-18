@@ -134,4 +134,4 @@ src/report.ts            jsonl, csv, summary
 ## License
 
 MIT. Built by [Lauren Lee](https://github.com/laurenelee) as a working example of
-what hackathon judging could look like. Written up at on [Dev.to](https://dev.to/lolocoding/164-disposable-computers-one-judging-afternoon-and-a-question-nobody-had-time-to-ask-19da)
+what hackathon judging could look like. Written up on [Dev.to](https://dev.to/lolocoding/164-disposable-computers-one-judging-afternoon-and-a-question-nobody-had-time-to-ask-19da)
