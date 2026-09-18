@@ -1,6 +1,7 @@
 # hackjudge
 
-Judges read the README and watch the video. Nobody runs the code.
+Judges read the README and watch the demo. Almost nobody builds the code, because
+there was never time to. Now there is.
 
 hackjudge runs it. Give it a list of submission repos and it puts each one in its
 own fresh sandbox, clones it, installs dependencies, compiles whatever there is to
@@ -113,6 +114,12 @@ step" honestly rather than optimistically. It will report a repo as
 `not_evaluable` when the toolchain it needs cannot be fetched into the sandbox,
 because that is a fact about our environment, not about the submission.
 
+## Privacy
+
+Machines are named by a hash of the repository, so the Sprites dashboard is a list
+of anonymous builds, not a list of teams. The mapping lives only in your results
+folder. Publish aggregates; keep the per-repo files to yourself.
+
 ## Layout
 
 ```
@@ -123,3 +130,8 @@ src/executors/local.ts   temp dir + bash, for development
 src/executors/sprites.ts one Sprite per repo, checkpoint on failure
 src/report.ts            jsonl, csv, summary
 ```
+
+## License
+
+MIT. Built by [Lauren Lee](https://github.com/laurenlee) as a working example of
+what hackathon judging could look like. Written up at [link to post].
