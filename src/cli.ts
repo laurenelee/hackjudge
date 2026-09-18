@@ -46,7 +46,32 @@ async function pool<T, R>(items: T[], concurrency: number, fn: (item: T, i: numb
   return out;
 }
 
+const USAGE = `hackjudge: build every hackathon submission, one fresh machine each.
+
+  npm run judge -- --input submissions.csv --executor local --limit 5
+  npm run judge -- --input submissions.csv --executor sprites --concurrency 4
+  npm run judge -- --cleanup
+
+options
+  -i, --input <csv>         CSV with a header and a "repo" column (cohort, stage optional)
+  -e, --executor <name>     local (no isolation; for development) or sprites   [local]
+  -c, --concurrency <n>     submissions to run at once                          [2]
+  -n, --limit <n>           only run the first n rows (after --offset)
+      --offset <n>          skip the first n rows                                [0]
+      --cohort <name>       only run rows whose cohort matches
+  -o, --out <dir>           where results go                                     [results]
+      --region <code>       Sprites region
+      --no-keep-failures    delete every machine, even the ones that failed
+      --cleanup             delete every sprite this tool created (hj-*) and exit
+  -h, --help                this
+
+Sprites needs SPRITES_TOKEN in the environment (sprite org auth, or sprites.dev/account).`;
+
 async function main(): Promise<void> {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    console.log(USAGE);
+    return;
+  }
   const { values } = parseArgs({
     options: {
       input: { type: 'string', short: 'i', default: 'data/sample.csv' },

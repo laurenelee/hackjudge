@@ -16,17 +16,17 @@ does this thing build?
 
 Every submission lands on exactly one rung.
 
-| verdict | meaning |
-| --- | --- |
-| `unreachable` | could not clone: deleted, private, or the link was never a repo |
-| `empty` | repo exists but has fewer than 3 source files |
-| `not_evaluable` | has code, but either no build system we recognise or a toolchain *we* could not obtain (this is our failure, not theirs) |
-| `install_failed` | dependencies would not install |
-| `build_failed` | installed, but compile or build failed (`failedStage` says which) |
-| `installed_no_build` | installed; there was no build or compile step to check |
-| `built_no_tests` | built; no tests to run |
-| `tests_failed` | built; tests exist and fail |
-| `tests_passed` | built; tests pass |
+| verdict              | meaning                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `unreachable`        | could not clone: deleted, private, or the link was never a repo                                                          |
+| `empty`              | repo exists but has fewer than 3 source files                                                                            |
+| `not_evaluable`      | has code, but either no build system we recognise or a toolchain _we_ could not obtain (this is our failure, not theirs) |
+| `install_failed`     | dependencies would not install                                                                                           |
+| `build_failed`       | installed, but compile or build failed (`failedStage` says which)                                                        |
+| `installed_no_build` | installed; there was no build or compile step to check                                                                   |
+| `built_no_tests`     | built; no tests to run                                                                                                   |
+| `tests_failed`       | built; tests exist and fail                                                                                              |
+| `tests_passed`       | built; tests pass                                                                                                        |
 
 "Built" in the summary means `built_no_tests`, `tests_failed` or `tests_passed`.
 `installed_no_build` is reported separately: nothing failed, but nothing was
@@ -38,12 +38,12 @@ Every sponsored hackathon asks whether the team used the sponsor's technology or
 just its logo. `src/checks/` answers that per ecosystem. The Midnight check
 (`checks/midnight.ts`) places each repo on a second ladder:
 
-| ladder | meaning |
-| --- | --- |
-| `no_contract` | no Compact contract in the repo |
+| ladder              | meaning                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `no_contract`       | no Compact contract in the repo                                                        |
 | `template_contract` | the contract is a starter-kit example with the names changed (token similarity ≥ 0.85) |
-| `ledger_only` | a real contract with no private inputs; nothing in it needed zero knowledge |
-| `private_state` | declares witnesses and/or discloses selectively |
+| `ledger_only`       | a real contract with no private inputs; nothing in it needed zero knowledge            |
+| `private_state`     | declares witnesses and/or discloses selectively                                        |
 
 It also counts witnesses, `disclose` calls, ledgers and circuits, records which
 `@midnight-ntwrk/*` packages are declared and imported, and compiles every
@@ -52,7 +52,7 @@ the pragma is only a lower bound, the newest compiler as of the last commit), an
 with today's. A contract that passes the first and fails the second
 was broken by toolchain drift, not by its authors. The summary reports both.
 
-Whether a `private_state` contract uses privacy *meaningfully* is still a
+Whether a `private_state` contract uses privacy _meaningfully_ is still a
 judge's call. The ladder tells you where to look, not what to conclude.
 
 ## Running it
@@ -133,5 +133,5 @@ src/report.ts            jsonl, csv, summary
 
 ## License
 
-MIT. Built by [Lauren Lee](https://github.com/laurenlee) as a working example of
-what hackathon judging could look like. Written up at [link to post].
+MIT. Built by [Lauren Lee](https://github.com/laurenelee) as a working example of
+what hackathon judging could look like. Written up at on [Dev.to](https://dev.to/lolocoding/164-disposable-computers-one-judging-afternoon-and-a-question-nobody-had-time-to-ask-19da)
