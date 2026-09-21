@@ -86,10 +86,15 @@ class SpriteSandbox implements Sandbox {
       await stream.close?.();
     }
     if (!id) {
-      // Fall back to listing: the newest checkpoint is ours.
+      // Fall back to listing. The list is not guaranteed to be in creation order, and the machine
+      // also carries automatic checkpoints (the "initial checkpoint", "pre-restore" snapshots), so
+      // find ours by comment, newest first. Trusting list order once recorded a pre-clone snapshot
+      // as a build failure, and restoring it wiped the repo.
       const list = await this.sprite.listCheckpoints();
-      const newest = list.at(-1);
-      id = newest?.id ?? null;
+      const ours = list
+        .filter((c) => c.comment === comment)
+        .sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
+      id = ours[0]?.id ?? null;
     }
     return id ? `sprite:${this.sprite.name}@${id}` : `sprite:${this.sprite.name}`;
   }
@@ -97,7 +102,46 @@ class SpriteSandbox implements Sandbox {
   async destroy(): Promise<void> {
     await this.sprite.delete();
   }
+
+  /** Every checkpoint on this machine, oldest first. */
+  async checkpoints(): Promise<Array<{ id: string; createTime: Date; comment?: string; isAuto?: boolean }>> {
+    const list = await this.sprite.listCheckpoints();
+    return [...list].sort((a, b) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime());
+  }
+
+  /** Rewind the machine to a checkpoint taken earlier (e.g. the moment a build failed). */
+  async restore(checkpointId: string): Promise<void> {
+    const stream = await this.sprite.restoreCheckpoint(checkpointId);
+    try {
+      await stream.processAll((msg) => {
+        const anyMsg = msg as unknown as Record<string, unknown>;
+        if (anyMsg['type'] === 'error') throw new Error(String(anyMsg['error'] ?? 'restore error'));
+      });
+    } finally {
+      await stream.close?.();
+    }
+  }
+
+  /** Undo a previous allowlist (policies survive checkpoint restores; they belong to the machine). */
+  async openNetwork(): Promise<void> {
+    await this.sprite.updateNetworkPolicy({ rules: [{ domain: '*', action: 'allow' }] });
+  }
+
+  /**
+   * Restrict what this machine can reach. Rules are evaluated in order; the trailing
+   * deny keeps anything not listed (including git pushes to arbitrary hosts) off the wire.
+   */
+  async setNetworkAllowlist(domains: string[]): Promise<void> {
+    await this.sprite.updateNetworkPolicy({
+      rules: [
+        ...domains.map((domain) => ({ domain, action: 'allow' as const })),
+        { domain: '*', action: 'deny' as const },
+      ],
+    });
+  }
 }
+
+export type { SpriteSandbox };
 
 export class SpritesExecutor implements Executor {
   readonly name = 'sprites' as const;
@@ -126,6 +170,12 @@ export class SpritesExecutor implements Executor {
       waitForCapacity: true,
       runtime: 'dev',
     });
+    return new SpriteSandbox(spriteName, sprite);
+  }
+
+  /** Attach to a machine an earlier run left behind, by the name in its checkpointRef. */
+  async attach(spriteName: string): Promise<SpriteSandbox> {
+    const sprite = await this.client.getSprite(spriteName);
     return new SpriteSandbox(spriteName, sprite);
   }
 

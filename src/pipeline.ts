@@ -46,8 +46,15 @@ function stageOf(stage: Stage, r: ExecResult, command?: string): StageResult {
 /** Commands per build system. Returned as null when the step does not apply. */
 // Compact (Midnight's contract language) ships its own CLI; hackathon repos assume it is on PATH.
 // The installer puts the binary in ~/.local/bin; `compact update` fetches the compiler via the GitHub API.
-export const COMPACT_TOOLCHAIN = `export PATH="$HOME/.local/bin:$HOME/.compact/bin:$PATH"; command -v compact >/dev/null || curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh; compact compile --version >/dev/null 2>&1 || compact update`;
+export const COMPACT_TOOLCHAIN = `export PATH="$HOME/.local/bin:$HOME/.compact/bin:$PATH"; command -v compact >/dev/null || curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh; compact compile --version >/dev/null 2>&1 || compact update; ` +
+  // A repo's own scripts may pin a compiler version ("compact compile +0.31.1 ..."). \`compact\` does not
+  // fetch that version on demand; it has to be installed first, or the build fails with "Couldn't find
+  // compiler". That failure is ours, not the team's, and the first full run counted six of them as
+  // build_failed. Install every version the repo pins before its build is judged.
+  `for v in $(grep -rhoE '(compact(c)?[[:space:]]+compile[[:space:]]+\\+[0-9]+\\.[0-9]+\\.[0-9]+|compact[[:space:]]+update[[:space:]]+[0-9]+\\.[0-9]+\\.[0-9]+|COMPACT(C)?_?(VERSION|VER)[[:space:]]*[:=][[:space:]]*["'"'"']?[0-9]+\\.[0-9]+\\.[0-9]+|[[:space:]]\\+[0-9]+\\.[0-9]+\\.[0-9]+[[:space:]])' --include=package.json --include='*.sh' --include='*.mjs' --include='*.cjs' --include='*.js' --include='*.ts' --include='Makefile' --include='*.yml' --include='*.yaml' "$WORKDIR" 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | sort -u); do compact update "$v" >/dev/null 2>&1 || echo "hackjudge: could not install pinned compact $v" >&2; done; true`;
 const TOOLCHAIN_PATH = `export PATH="$HOME/.local/bin:$HOME/.compact/bin:$PATH" &&`;
+/** The build wanted a compiler version this sandbox does not have. Our failure, never theirs. */
+const MISSING_COMPILER = /Couldn't find compiler for|Directory does not exist: .*\.compact\/versions/;
 
 // The Sprite image ships Node and npm only. Rather than hoping a global install lands on
 // PATH, resolve each package manager to the real binary if present, else run it via npx.
@@ -79,7 +86,7 @@ function commandsFor(inv: Inventory): { install: string | null; compile: string 
 
 /** Toolchains the repo cannot be expected to vendor. A failure here is ours, not the submission's. */
 function toolchainFor(inv: Inventory): { name: string; command: string } | null {
-  if (inv.hasCompactContracts && inv.contractCompileScript) return { name: 'compact', command: COMPACT_TOOLCHAIN };
+  if (inv.hasCompactContracts) return { name: 'compact', command: COMPACT_TOOLCHAIN };
   return null;
 }
 
@@ -242,6 +249,9 @@ export async function judgeOne(
       const r = await sb.exec(cmds.compile, { timeoutMs: opts.buildTimeoutMs, env });
       stages.push(stageOf('compile', r, cmds.compile));
       if (r.exitCode !== 0) {
+        if (MISSING_COMPILER.test(r.stdout + r.stderr)) {
+          verdict = 'not_evaluable'; failedStage = 'compile'; error = 'a compiler version the repo pins could not be installed in the sandbox'; return finish();
+        }
         verdict = 'build_failed';
         failedStage = 'compile';
         return finish(true);
@@ -257,6 +267,9 @@ export async function judgeOne(
       const r = await sb.exec(cmds.build, { timeoutMs: opts.buildTimeoutMs, env });
       stages.push(stageOf('build', r, cmds.build));
       if (r.exitCode !== 0) {
+        if (MISSING_COMPILER.test(r.stdout + r.stderr)) {
+          verdict = 'not_evaluable'; failedStage = 'build'; error = 'a compiler version the repo pins could not be installed in the sandbox'; return finish();
+        }
         verdict = 'build_failed';
         failedStage = 'build';
         return finish(true);
@@ -286,7 +299,8 @@ export async function judgeOne(
     if (sb) {
       try {
         if (preserve && opts.keepFailures) {
-          checkpointRef = await sb.checkpoint(`hackjudge ${verdict} at ${failedStage} for ${repo}`);
+          // No repo URL in the comment: checkpoint comments are visible in the dashboard.
+          checkpointRef = await sb.checkpoint(`hackjudge ${verdict} at ${failedStage}`);
         } else {
           await sb.destroy();
         }

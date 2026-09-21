@@ -95,6 +95,60 @@ slice, `--region <code>`, `--no-keep-failures` to delete everything regardless.
 When you have finished looking at the failures: `npm run judge -- --cleanup`
 deletes every sprite the tool created (they are all named `hj-*`).
 
+## hackfix: hand the failures to an agent
+
+The judge leaves every broken build checkpointed. `hackfix` takes those machines and
+gives each one to an agent with a shell, a time limit, and one instruction: make the
+exact command that failed exit 0, change as little as possible, then write `FIX.md`
+explaining what was wrong in words a student can act on.
+
+```sh
+# the agent needs a credential. Either your Claude subscription:
+claude setup-token            # run once on your own machine; prints a long-lived token
+export CLAUDE_CODE_OAUTH_TOKEN="..."
+# or an API key (billed per token, so the summary reports exact cost):
+export ANTHROPIC_API_KEY="..."
+
+npm run fix -- --results results/<run>.jsonl --limit 3        # try three first
+npm run fix -- --results results/<run>.jsonl --concurrency 2  # then the lot
+npm run fix -- --results results/<run>.jsonl --resume results/fix-<id>.jsonl --model haiku   # continue, cheaper
+npm run fix -- --results results/<run>.jsonl --only hj-abc,hj-def --model haiku              # paired rerun
+```
+
+What it does per machine, in order: restore the checkpoint taken when the build broke;
+narrow the machine's network to package registries and the model API (enforced by the
+platform, not the prompt); install Claude Code on the machine and run it headless with
+the failing command and its last 40 lines of output; then the **harness** re-runs that
+command. The agent never grades its own work. Finally it measures the diff (`FIX.md`
+excluded), reads the note, and checkpoints the machine again.
+
+Outcomes: `fixed`, `not_fixed`, `agent_timeout`, `agent_error`, `restore_failed`,
+`fence_blocked`, `build_hangs`, `skipped`. `fence_blocked` means the build, run behind our
+network allowlist, failed on a host the judge's run never touched: the fence changed the
+problem, so no agent ran, the host is named, and you add it to the allowlist and rerun.
+This happened to sixteen machines on our first full run (a compiler that downloads its own
+pinned versions; a ZK step that fetches reference strings), and several agents "fixed" the
+fence instead of the build. The baseline check now runs behind the fence and compares the
+failure with the judge's before anything is asked of the agent. A fix under `--ceiling` changed lines (default 20, lockfiles not counted)
+with no new files is reported as trivial; the summary counts trivial and large fixes separately, because
+"an agent rewrote the project until it compiled" is not the same finding as "it was one
+line."
+
+Each result keeps the diff (lockfiles excluded, capped) and flags the usual ways to make a
+build pass without fixing it: `@ts-ignore`, a loosened `tsconfig`, a build script that
+always succeeds, new files. It also flags a note that reports an unreachable host, and any file the agent
+changed outside the repository (a symlinked compiler version, an edited toolchain wrapper),
+because the network fence can turn a limitation of *our* machine into a change to *their*
+code, and the judge's rule applies here too: environment failures are ours, never theirs.
+
+The agent runs *on* the machine rather than on your laptop with the machine as a tool.
+The machine already has the shell, the toolchain and the broken repo; the harness only
+has to ask a question and check the answer.
+
+`results/fix-<run>.jsonl` contains each `FIX.md` and the agent's raw summary. Private,
+like the judge's per-repo file. `results/fix-<run>.summary.json` is counts, medians and
+cost, and is the only thing to publish.
+
 ## Output
 
 `results/<run>.jsonl` has one line per repo with the inventory, every stage's
@@ -129,6 +183,8 @@ src/inventory.ts         what is in the repo; which build system; which director
 src/executors/local.ts   temp dir + bash, for development
 src/executors/sprites.ts one Sprite per repo, checkpoint on failure
 src/report.ts            jsonl, csv, summary
+src/fix.ts               hackfix: restore → fence network → agent → harness verifies → diff, note, checkpoint
+src/fix-cli.ts           hackfix argument parsing and run loop
 ```
 
 ## License
