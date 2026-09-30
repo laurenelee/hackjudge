@@ -5,8 +5,9 @@
   "scripts": {
     "judge": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit",
-    "fix": "tsx src/fix-cli.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "fix": "tsx src/fix-cli.ts",
+    "check": "npm run typecheck && npm test"
   },
   "keywords": [
     "hackathon",
