@@ -1,6 +1,8 @@
 node_modules/
 dist/
-data/
+data/*
+!data/sample.csv
 results/
 .env
 *.log
+.DS_Store

@@ -75,6 +75,8 @@ npm install
 npm run judge -- --input data/sample.csv --executor local --limit 5
 ```
 
+`data/sample.csv` ships with five public repos chosen to land on different rungs (one unreachable, one empty, two that install with nothing to build, one that builds), so the first run shows the ladder working in about ninety seconds. Replace it with your own submission list; `data/` is otherwise gitignored.
+
 ### The real run, on Sprites
 
 One [Sprite](https://sprites.dev) per submission. Failed sprites are checkpointed
@@ -138,10 +140,10 @@ Each result keeps the diff (lockfiles excluded, capped) and flags the usual ways
 build pass without fixing it: `@ts-ignore`, a loosened `tsconfig`, a build script that
 always succeeds, new files. It also flags a note that reports an unreachable host, and any file the agent
 changed outside the repository (a symlinked compiler version, an edited toolchain wrapper),
-because the network fence can turn a limitation of *our* machine into a change to *their*
+because the network fence can turn a limitation of _our_ machine into a change to _their_
 code, and the judge's rule applies here too: environment failures are ours, never theirs.
 
-The agent runs *on* the machine rather than on your laptop with the machine as a tool.
+The agent runs _on_ the machine rather than on your laptop with the machine as a tool.
 The machine already has the shell, the toolchain and the broken repo; the harness only
 has to ask a question and check the answer.
 
@@ -190,4 +192,4 @@ src/fix-cli.ts           hackfix argument parsing and run loop
 ## License
 
 MIT. Built by [Lauren Lee](https://github.com/laurenelee) as a working example of
-what hackathon judging could look like. Written up on [Dev.to](https://dev.to/lolocoding/164-disposable-computers-one-judging-afternoon-and-a-question-nobody-had-time-to-ask-19da)
+what hackathon judging could look like. Written up in two parts on Dev.to: [building all 164 submissions](https://dev.to/lolocoding/164-disposable-computers-one-judging-afternoon-and-a-question-nobody-had-time-to-ask-19da) (`npm run judge`) and [handing the 33 broken builds to an agent](https://dev.to/lolocoding/33-broken-builds-one-agent-on-each-disposable-computer-the-hard-part-was-deciding-what-counts-as-3ipj) (`npm run fix`).
